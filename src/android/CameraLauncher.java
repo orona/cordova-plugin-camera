@@ -25,9 +25,12 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.InputStream;
+import java.io.BufferedInputStream;
 import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import android.os.Build;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
@@ -80,6 +83,22 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     private static final String GET_All = "Get All";
     
     private static final String LOG_TAG = "CameraLauncher";
+
+    private static final int MAX_SIGNATURE_LENGTH = 16;
+    private static final int[] SIGNATURE_PNG = {137, 80, 78, 71, 13, 10, 26, 10};
+    private static final int[] SIGNATURE_JPEG = {255, 216, 222};
+    private static final int[] SIGNATURE_GIF = {71, 73, 70};
+
+    public static final int SIGNATURE_ID_JPEG = 0;
+    public static final int SIGNATURE_ID_PNG = 1;
+    public static final int SIGNATURE_ID_GIF = 2;
+    private static final int[][] SIGNATURES = new int[3][];
+
+    static {
+        SIGNATURES[SIGNATURE_ID_JPEG] = SIGNATURE_JPEG;
+        SIGNATURES[SIGNATURE_ID_PNG] = SIGNATURE_PNG;
+        SIGNATURES[SIGNATURE_ID_GIF] = SIGNATURE_GIF;
+    }
 
     //Where did this come from?
     private static final int CROP_CAMERA = 100;
@@ -286,8 +305,10 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 croppedUri = Uri.fromFile(photo);
                 intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, croppedUri);
             } else {
+              //change for fix
                 intent.setAction(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
+                //intent.setAction(Intent.ACTION_PICK);
             }
         } else if (this.mediaType == VIDEO) {
                 intent.setType("video/*");
@@ -424,7 +445,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
             if (this.saveToPhotoAlbum) {
                 //Create a URI on the filesystem so that we can write the file.
-                uri = Uri.fromFile(new File(getPicutresPath()));
+                uri = Uri.fromFile(new File(getPicutresPath());
             } else {
                 uri = Uri.fromFile(new File(getTempDirectoryPath(), System.currentTimeMillis() + ".jpg"));
             }
@@ -555,12 +576,14 @@ private String ouputModifiedBitmap(Bitmap bitmap, Uri uri) throws IOException {
             } else {
                 String uriString = uri.toString();
                 // Get the path to the image. Makes loading so much easier.
-                String mimeType = FileHelper.getMimeType(uriString, this.cordova);
-                // If we don't have a valid image so quit.
+                String mimeType = FileHelper.getMimeType(FileHelper.getRealPath(uri, this.cordova), this.cordova);
                 if (!("image/jpeg".equalsIgnoreCase(mimeType) || "image/png".equalsIgnoreCase(mimeType))) {
                     Log.d(LOG_TAG, "I either have a null image path or bitmap");
-                    this.failPicture("Unable to retrieve path to picture!");
+                    this.failPicture("Unable to retrieve path to picture! " + uriString + " mime type is = " + mimeType + " real path is = " + FileHelper.getRealPath(uri, this.cordova) + " build version is = " + Build.VERSION.SDK_INT);
                     return;
+                }
+                if ("image/jpeg".equalsIgnoreCase(mimeType)){
+                  this.encodingType = JPEG;
                 }
                 Bitmap bitmap = null;
                 try {
@@ -616,7 +639,7 @@ private String ouputModifiedBitmap(Bitmap bitmap, Uri uri) throws IOException {
                     bitmap.recycle();
                     bitmap = null;
                 }
-                System.gc();
+                //System.gc();
             }
         }
     }
@@ -1031,5 +1054,63 @@ private String ouputModifiedBitmap(Bitmap bitmap, Uri uri) throws IOException {
 
     public void onScanCompleted(String path, Uri uri) {
         this.conn.disconnect();
+    }
+
+    /**
+     *
+     * @param is InputStream on start of file. Otherwise signature can not be defined.
+     * @return int id of signature or -1, if unknown signature was found. See SIGNATURE_ID_(type) constants to
+     *      identify signature by its id.
+     * @throws IOException in cases of read errors.
+     */
+    public static int getSignatureIdFromHeader(InputStream is) throws IOException {
+        // read signature from head of source and compare with known signatures
+        int signatureId = -1;
+        int sigCount = SIGNATURES.length;
+        int[] byteArray = new int[MAX_SIGNATURE_LENGTH];
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < MAX_SIGNATURE_LENGTH; i++) {
+            byteArray[i] = is.read();
+            builder.append(Integer.toHexString(byteArray[i]));
+        }
+        for (int i = 0; i < MAX_SIGNATURE_LENGTH; i++) {
+
+            // check each bytes with known signatures
+            int bytes = byteArray[i];
+            int lastSigId = -1;
+            int coincidences = 0;
+
+            for (int j = 0; j < sigCount; j++) {
+                int[] sig = SIGNATURES[j];
+
+                if (bytes == sig[i]) {
+                    lastSigId = j;
+                    coincidences++;
+                }
+            }
+
+            // signature is unknown
+            if (coincidences == 0) {
+                break;
+            }
+            // if first bytes of signature is known we check signature for full coincidence
+            if (coincidences == 1) {
+                int[] sig = SIGNATURES[lastSigId];
+                int sigLength = sig.length;
+                boolean isSigKnown = true;
+                for (; i < MAX_SIGNATURE_LENGTH && i < sigLength; i++) {
+                    bytes = byteArray[i];
+                    if (bytes != sig[i]) {
+                        isSigKnown = false;
+                        break;
+                    }
+                }
+                if (isSigKnown) {
+                    signatureId = lastSigId;
+                }
+                break;
+            }
+        }
+        return signatureId;
     }
 }
