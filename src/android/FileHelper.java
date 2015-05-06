@@ -61,6 +61,9 @@ public class FileHelper {
         else
             realPath = FileHelper.getRealPathFromURI_API19(cordova.getActivity(), uri);
 
+        if(realPath == ""){
+            realPath = FileHelper.getRealPathIfUnsolved(cordova.getActivity(), uri);
+        }
         return realPath;
     }
 
@@ -74,6 +77,20 @@ public class FileHelper {
      */
     public static String getRealPath(String uriString, CordovaInterface cordova) {
         return FileHelper.getRealPath(Uri.parse(uriString), cordova);
+    }
+
+    public static String getRealPathIfUnsolved(Context context, Uri uri){
+        Cursor cursor = context.getContentResolver().query(uri, null, null, null, null);
+        cursor.moveToFirst();
+        String document_id = cursor.getString(0);
+        document_id = document_id.substring(document_id.lastIndexOf(":")+1);
+        cursor.close();
+        cursor = context.getContentResolver().query( 
+        android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, null, MediaStore.Images.Media._ID + " = ? ", new String[]{document_id}, null);
+        cursor.moveToFirst();
+        String filePath = cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA));
+        cursor.close();
+        return filePath;
     }
 
     @SuppressLint("NewApi")
