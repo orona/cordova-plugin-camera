@@ -445,7 +445,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
             if (this.saveToPhotoAlbum) {
                 //Create a URI on the filesystem so that we can write the file.
-                uri = Uri.fromFile(new File(getPicutresPath());
+                uri = Uri.fromFile(new File(getPicutresPath()));
             } else {
                 uri = Uri.fromFile(new File(getTempDirectoryPath(), System.currentTimeMillis() + ".jpg"));
             }
